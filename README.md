@@ -15,7 +15,7 @@ Implementation of Erlang/OTP node in Go
  * RPC callbacks
  * Monitor processes
  * Monitor nodes
- * Support Erlang 20.*
+ * Support Erlang 21.*
 
 #### Requirement ####
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/halturin/ergonode/etf"
+	"github.com/halturin/ergonode/lib"
 )
 
 // GenServerInt interface
@@ -75,7 +76,7 @@ func (gs *GenServer) ProcessLoop(pcs procChannels, pd Process, args ...interface
 			fromPid = msgFrom[0].(etf.Pid)
 
 		}
-		nLog("[%#v]. Message from %#v\n", gs.Self, fromPid)
+		lib.Log("[%#v]. Message from %#v\n", gs.Self, fromPid)
 		switch m := message.(type) {
 		case etf.Tuple:
 			switch mtag := m[0].(type) {
@@ -123,10 +124,10 @@ func (gs *GenServer) ProcessLoop(pcs procChannels, pd Process, args ...interface
 					}()
 				}
 			case etf.Ref:
-				nLog("got reply: %#v\n%#v", mtag, message)
+				lib.Log("got reply: %#v\n%#v", mtag, message)
 				gs.chreply <- &m
 			default:
-				nLog("mtag: %#v", mtag)
+				lib.Log("mtag: %#v", mtag)
 				gs.lock.Lock()
 				go func() {
 					code, state1 := pd.(GenServerInt).HandleInfo(&message, gs.state)
@@ -139,7 +140,7 @@ func (gs *GenServer) ProcessLoop(pcs procChannels, pd Process, args ...interface
 				}()
 			}
 		default:
-			nLog("m: %#v", m)
+			lib.Log("m: %#v", m)
 			gs.lock.Lock()
 			go func() {
 				code, state1 := pd.(GenServerInt).HandleInfo(&message, gs.state)

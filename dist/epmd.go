@@ -1,13 +1,12 @@
-package ergonode
+package dist
 
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/halturin/ergonode/lib"
 	"net"
 	"strings"
 )
-
-type mid uint8
 
 const (
 	EPMD_ALIVE2_REQ  = 120
@@ -16,7 +15,11 @@ const (
 	EPMD_PORT_PLEASE2_REQ = 122
 	EPMD_PORT2_RESP       = 119
 
-	// we don't need to support NAMES_REQ, DUMP_REQ and KILL_REQ... at least now
+	EPMD_NAMES_REQ = 110 // $n
+
+	EPMD_DUMP_REQ = 100 // $d
+	EPMD_KILL_REQ = 107 // $k
+	EPMD_STOP_REQ = 115 // $s
 )
 
 type EPMD struct {
@@ -42,6 +45,12 @@ type EPMD struct {
 }
 
 func (e *EPMD) Init(name string, port uint16) {
+	if !e.server() {
+		e.client(name, port)
+	}
+}
+
+func (e *EPMD) client(name string, port uint16) {
 
 	ns := strings.Split(name, "@")
 	// TODO: add fqdn support
@@ -74,7 +83,7 @@ func (e *EPMD) Init(name string, port uint16) {
 		for {
 			select {
 			case reply := <-in:
-				nLog("From EPMD: %v", reply)
+				lib.Log("From EPMD: %v", reply)
 
 				if len(reply) < 1 {
 					continue
@@ -90,6 +99,11 @@ func (e *EPMD) Init(name string, port uint16) {
 
 	e.register()
 
+}
+
+func (e *EPMD) server() bool {
+
+	return false
 }
 
 func (e *EPMD) register() {
@@ -145,7 +159,7 @@ func epmdREADER(conn net.Conn, in chan []byte) {
 			in <- []byte{}
 			return
 		}
-		nLog("Read from EPMD %d: %v", n, buf[:n])
+		lib.Log("Read from EPMD %d: %v", n, buf[:n])
 		in <- buf[:n]
 	}
 }
@@ -207,3 +221,67 @@ func read_PORT2_RESP(reply []byte) (portno int) {
 	}
 	return
 }
+
+// func epmd(host string, port int) bool {
+// 	epmd, err := net.Listen("tcp", net.JoinHostPort(host, port))
+// 	if err != nil {
+// 		lib.Log("EPMD starting failed %s", err)
+// 		return false
+// 	}
+
+// 	go func() {
+// 		for {
+// 			c, err := epmd.AcceptTCP()
+// 			if err != nil {
+// 				lib.Log(err.Error())
+// 				continue
+// 			}
+
+// 			c.SetKeepAlive(true)
+// 			c.SetKeepAlivePeriod(15 * time.Second)
+// 			c.SetNoDelay(true)
+
+// 			lib.Log("EPMD accepted new connection from %s", c.RemoteAddr().String())
+
+// 			epmdconn := EPMDConn{
+// 				conn: c,
+// 			}
+// 			epmdconn.run(c)
+
+// 		}
+// 	}()
+// }
+
+// func (e *EPMDConn) run() {
+// 	go func() {
+// 		for {
+// 			terms := <-wchan
+// 			err := currNd.WriteMessage(c, terms)
+// 			if err != nil {
+// 				lib.Log("Enode error (writing): %s", err.Error())
+// 				break
+// 			}
+// 		}
+// 		c.Close()
+// 		n.lock.Lock()
+// 		n.handle_monitors_node(currNd.GetRemoteName())
+// 		delete(n.connections, currNd.GetRemoteName())
+// 		n.lock.Unlock()
+// 	}()
+
+// 	go func() {
+// 		for {
+// 			terms, err := currNd.ReadMessage(c)
+// 			if err != nil {
+// 				lib.Log("Enode error (reading): %s", err.Error())
+// 				break
+// 			}
+// 			n.handleTerms(c, wchan, terms)
+// 		}
+// 		c.Close()
+// 		n.lock.Lock()
+// 		n.handle_monitors_node(currNd.GetRemoteName())
+// 		delete(n.connections, currNd.GetRemoteName())
+// 		n.lock.Unlock()
+// 	}()
+// }
