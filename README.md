@@ -30,7 +30,7 @@ Latest version: [0.1.0](https://github.com/orbitalnetwork/sputnik/releases/tag/v
 
 #### [0.1.0] - 2019-02-19 ####
 - Now we make versioning releases
-- Improved node creation. Now you may specify the listening port range. See 'Usage' for details
+- Improved node creation. Now you can specify the listening port range. See 'Usage' for details
 - Added embedded EPMD. Now ergonode trying to start internal epmd service
 
 ## Usage ##
@@ -42,6 +42,12 @@ type goGenServ struct {
     completeChan chan bool
 }
 
+// listen from ListenRangeBegin ... ListenRangeEnd
+// n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin), uint16(ListenRangeEnd))
+// listen from ListenRangeBegin ... 65000
+// n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin))
+
+// use default listen port range: 15000...65000
 Node := ergonode.Create("examplenode@127.0.0.1", "SecretCookie")
 completeChan := make(chan bool)
 gs := new(goGenServ)
