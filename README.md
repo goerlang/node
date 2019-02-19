@@ -25,9 +25,7 @@ Implementation of Erlang/OTP node in Go
 
 Here is the changes of lastest release. For more details see the [ChangeLog](ChangeLog)
 
-Latest version: [0.1.0](https://github.com/orbitalnetwork/sputnik/releases/tag/v.0.1.0)
-
-#### [0.1.0] - 2019-02-19 ####
+#### [0.1.0](https://github.com/orbitalnetwork/sputnik/releases/tag/v.0.1.0) - 2019-02-19 ####
 - Now we make versioning releases
 - Improved node creation. Now you can specify the listening port range. See 'Usage' for details
 - Added embedded EPMD. Now ergonode trying to start internal epmd service
