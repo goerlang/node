@@ -17,20 +17,21 @@ Implementation of Erlang/OTP node in Go
  * Monitor nodes
  * Support Erlang 21.*
 
-#### Chanelog ####
+#### Requirement ####
+
+ * Go 1.9 and above
+
+
+## Chanelog ##
 
 Here is the changes of last release. For more details see the [ChangeLog]
 
 Latest version: [0.1.0](https://github.com/orbitalnetwork/sputnik/releases/tag/v.0.1.0)
 
-## [0.1.0] - 2019-02-19
+#### [0.1.0] - 2019-02-19 ####
 - Now we make versioning releases
 - Improved node creation. Now you may specify the listening port range. See 'Usage' for details
 - Added embedded EPMD. Now ergonode trying to start internal epmd service
-
-#### Requirement ####
-
- * Go 1.9 and above
 
 ## Usage ##
 
