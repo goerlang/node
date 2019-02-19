@@ -23,7 +23,7 @@ Implementation of Erlang/OTP node in Go
 
 ## Changelog ##
 
-Here is the changes of lastest release. For more details see the [ChangeLog](ChangeLog)
+Here is the changes of latest release. For more details see the [ChangeLog](ChangeLog)
 
 #### [0.2.0](https://github.com/halturin/ergonode/releases/tag/0.2.0) - 2019-02-23 ####
 - Now we make versioning releases
