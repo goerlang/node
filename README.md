@@ -22,9 +22,9 @@ Implementation of Erlang/OTP node in Go
  * Go 1.9 and above
 
 
-## Chanelog ##
+## Changelog ##
 
-Here is the changes of last release. For more details see the [ChangeLog]
+Here is the changes of lastest release. For more details see the [ChangeLog](ChangeLog)
 
 Latest version: [0.1.0](https://github.com/orbitalnetwork/sputnik/releases/tag/v.0.1.0)
 
