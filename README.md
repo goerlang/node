@@ -25,10 +25,10 @@ Implementation of Erlang/OTP node in Go
 
 Here is the changes of lastest release. For more details see the [ChangeLog](ChangeLog)
 
-#### [0.1.0](https://github.com/halturin/ergonode/releases/tag/0.1.0) - 2019-02-19 ####
+#### [0.2.0](https://github.com/halturin/ergonode/releases/tag/0.2.0) - 2019-02-23 ####
 - Now we make versioning releases
-- Improved node creation. Now you can specify the listening port range. See 'Usage' for details
-- Added embedded EPMD. Now ergonode trying to start internal epmd service
+- Improve node creation. Now you can specify the listening port range. See 'Usage' for details
+- Add embedded EPMD. Trying to start internal epmd service on starting ergonode.
 
 ## Usage ##
 
