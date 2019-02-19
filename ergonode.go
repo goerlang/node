@@ -84,8 +84,44 @@ type Process interface {
 }
 
 // Create create new node context with specified name and cookie string
-func Create(name string, port uint16, cookie string) (node *Node) {
+func Create(name string, cookie string, ports ...uint16) (node *Node) {
+	var listenRangeBegin uint16 = 15000
+	var listenRangeEnd uint16 = 65000
+	var port uint16 = 0
+	var listener net.Listener
+
 	lib.Log("Start with name '%s' and cookie '%s'", name, cookie)
+
+	switch len(ports) {
+	case 0:
+		// use defaults
+	case 1:
+		listenRangeBegin = ports[0]
+	case 2:
+		listenRangeBegin = ports[0]
+		listenRangeEnd = ports[1]
+		if listenRangeBegin-listenRangeEnd < 0 {
+			panic("Wrong port arguments")
+		}
+
+	default:
+		panic("Wrong port arguments")
+	}
+
+	lib.Log("Listening range: %d...%d", listenRangeBegin, listenRangeEnd)
+	for p := listenRangeBegin; p <= listenRangeEnd; p++ {
+		l, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(int(p))))
+		if err != nil {
+			continue
+		}
+		port = p
+		listener = l
+		break
+	}
+
+	if port == 0 {
+		panic("Can't listen port")
+	}
 
 	registry := &registryChan{
 		storeChan:     make(chan regReq),
@@ -108,14 +144,9 @@ func Create(name string, port uint16, cookie string) (node *Node) {
 		procID:      1,
 	}
 
-	l, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(int(port))))
-	if err != nil {
-		panic(err.Error())
-	}
-
 	go func() {
 		for {
-			c, err := l.Accept()
+			c, err := listener.Accept()
 			lib.Log("Accepted new connection from %s", c.RemoteAddr().String())
 			if err != nil {
 				lib.Log(err.Error())

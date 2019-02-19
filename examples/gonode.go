@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/halturin/ergonode"
 	"github.com/halturin/ergonode/etf"
+	"strconv"
+	"strings"
 )
 
 // GenServer implementation structure
@@ -14,11 +16,14 @@ type goGenServ struct {
 }
 
 var (
-	SrvName   string
-	NodeName  string
-	Cookie    string
-	err       error
-	EpmdPort  int
+	SrvName          string
+	NodeName         string
+	Cookie           string
+	err              error
+	ListenRangeBegin uint16
+	ListenRangeEnd   uint16 = 35000
+	Listen           string
+
 	EnableRPC bool
 )
 
@@ -145,18 +150,49 @@ func (gs *goGenServ) Terminate(reason int, state interface{}) {
 }
 
 func init() {
+	flag.StringVar(&Listen, "listen", "15151-20151", "listen port range")
 	flag.StringVar(&SrvName, "gen_server", "examplegs", "gen_server name")
 	flag.StringVar(&NodeName, "name", "examplenode@127.0.0.1", "node name")
 	flag.StringVar(&Cookie, "cookie", "123", "cookie for interaction with erlang cluster")
-	flag.IntVar(&EpmdPort, "epmd_port", 15151, "epmd port")
 	flag.BoolVar(&EnableRPC, "rpc", false, "enable RPC")
+
 }
 
 func main() {
 	flag.Parse()
 
+	// parse listen range port
+	l := strings.Split(Listen, "-")
+	switch len(l) {
+	case 1:
+		if i, err := strconv.ParseUint(l[0], 10, 16); err != nil {
+			panic(err)
+		} else {
+			ListenRangeBegin = uint16(i)
+		}
+	case 2:
+		if i, err := strconv.ParseUint(l[0], 10, 16); err != nil {
+			panic(err)
+		} else {
+			ListenRangeBegin = uint16(i)
+		}
+		if i, err := strconv.ParseUint(l[1], 10, 16); err != nil {
+			panic(err)
+		} else {
+			ListenRangeEnd = uint16(i)
+		}
+	default:
+		panic("wrong port range arg")
+	}
+
 	// Initialize new node with given name and cookie
-	n := ergonode.Create(NodeName, uint16(EpmdPort), Cookie)
+	n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin), uint16(ListenRangeEnd))
+
+	// listen from ListenRangeBegin ... 65000
+	// n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin))
+
+	// use default listen port range: 15000...65000
+	//n := ergonode.Create(NodeName, Cookie)
 
 	// Create channel to receive message when main process should be stopped
 	completeChan := make(chan bool)
