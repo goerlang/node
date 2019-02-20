@@ -44,9 +44,9 @@ type EPMD struct {
 	out      chan []byte
 }
 
-func (e *EPMD) Init(name string, port uint16) {
-	if !e.server() {
-		e.client(name, port)
+func (e *EPMD) Init(host string, port uint16) {
+	if !e.server(host, port) {
+		e.client(host, port)
 	}
 }
 
@@ -64,7 +64,7 @@ func (e *EPMD) client(name string, port uint16) {
 	e.HighVsn = 5
 	e.LowVsn = 5
 	e.Creation = 0
-
+	dsn := net.JoinHostPort("", strconv.Itoa(int(p)))
 	conn, err := net.Dial("tcp", "127.0.0.1:4369")
 	if err != nil {
 		panic(err.Error())
@@ -101,8 +101,27 @@ func (e *EPMD) client(name string, port uint16) {
 
 }
 
-func (e *EPMD) server() bool {
+func (e *EPMD) server(host string, port uint16) bool {
 
+	// l, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(int(port))))
+	// if err != nil {
+	// 	return false
+	// }
+
+	// go func() {
+	// 	for {
+	// 		c, err := l.Accept()
+	// 		lib.Log("Accepted new EPMD connection from %s", c.RemoteAddr().String())
+	// 		if err != nil {
+	// 			lib.Log(err.Error())
+	// 		} else {
+	// 			wchan := make(chan []etf.Term, 10)
+	// 			node.run(c, wchan, false)
+	// 		}
+	// 	}
+	// }()
+
+	// return true
 	return false
 }
 

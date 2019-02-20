@@ -83,6 +83,14 @@ type Process interface {
 	setPid(pid etf.Pid)                        // method set pid of started process
 }
 
+var Options = struct {
+	EPMD_port int
+	EPMD_host string
+}{
+	EPMD_port: 4369,
+	EPMD_host: "127.0.0.1",
+}
+
 // Create create new node context with specified name and cookie string
 func Create(name string, cookie string, ports ...uint16) (node *Node) {
 	var listenRangeBegin uint16 = 15000
@@ -130,7 +138,7 @@ func Create(name string, cookie string, ports ...uint16) (node *Node) {
 	}
 
 	epmd := dist.EPMD{}
-	epmd.Init(name, port)
+	epmd.Init(Options.EPMD_host, Options.EPMD_port)
 
 	node = &Node{
 		EPMD:        epmd,
@@ -151,8 +159,7 @@ func Create(name string, cookie string, ports ...uint16) (node *Node) {
 			if err != nil {
 				lib.Log(err.Error())
 			} else {
-				wchan := make(chan []etf.Term, 10)
-				node.run(c, wchan, false)
+				node.run(c, false)
 			}
 		}
 	}()
@@ -255,7 +262,7 @@ func (n *Node) getProcID() (s uint32) {
 	return
 }
 
-func (n *Node) run(c net.Conn, wchan chan []etf.Term, negotiate bool) {
+func (n *Node) run(c net.Conn, negotiate bool) {
 
 	var currNd *dist.NodeDesc
 
@@ -265,6 +272,7 @@ func (n *Node) run(c net.Conn, wchan chan []etf.Term, negotiate bool) {
 		currNd = dist.NewNodeDesc(n.FullName, n.Cookie, false, nil)
 	}
 
+	wchan := make(chan []etf.Term, 10)
 	// run writer routine
 	go func() {
 		for {
