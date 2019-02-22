@@ -157,6 +157,8 @@ func epmdREADER(conn net.Conn, in chan []byte) {
 		if err != nil {
 			in <- buf[0:n]
 			in <- []byte{}
+			lib.Log("111112")
+
 			return
 		}
 		lib.Log("EPMD reader. Read %d: %v", n, buf[:n])
@@ -168,29 +170,30 @@ func epmdWRITER(conn net.Conn, in chan []byte, out chan []byte) {
 	for {
 		select {
 		case data := <-out:
-			buf := make([]byte, 2)
-			binary.BigEndian.PutUint16(buf[0:2], uint16(len(data)))
-			buf = append(buf, data...)
-			_, err := conn.Write(buf)
+			_, err := conn.Write(data)
 			if err != nil {
+				lib.Log("11111")
 				in <- []byte{}
 			}
+			lib.Log("EPMD writer. Write: %v", data)
+
 		}
 	}
 }
 
 func compose_ALIVE2_REQ(e *EPMD) (reply []byte) {
-	reply = make([]byte, 14+len(e.Name)+len(e.Extra))
-	reply[0] = byte(EPMD_ALIVE2_REQ)
-	binary.BigEndian.PutUint16(reply[1:3], e.Port)
-	reply[3] = e.Type
-	reply[4] = e.Protocol
-	binary.BigEndian.PutUint16(reply[5:7], e.HighVsn)
-	binary.BigEndian.PutUint16(reply[7:9], e.LowVsn)
+	reply = make([]byte, 2+14+len(e.Name)+len(e.Extra))
+	binary.BigEndian.PutUint16(reply[0:2], uint16(len(reply)-2))
+	reply[2] = byte(EPMD_ALIVE2_REQ)
+	binary.BigEndian.PutUint16(reply[3:5], e.Port)
+	reply[5] = e.Type
+	reply[6] = e.Protocol
+	binary.BigEndian.PutUint16(reply[7:9], e.HighVsn)
+	binary.BigEndian.PutUint16(reply[9:11], e.LowVsn)
 	nLen := len(e.Name)
-	binary.BigEndian.PutUint16(reply[9:11], uint16(nLen))
-	offset := (11 + nLen)
-	copy(reply[11:offset], e.Name)
+	binary.BigEndian.PutUint16(reply[11:13], uint16(nLen))
+	offset := (13 + nLen)
+	copy(reply[13:offset], e.Name)
 	nELen := len(e.Extra)
 	binary.BigEndian.PutUint16(reply[offset:offset+2], uint16(nELen))
 	copy(reply[offset+2:offset+2+nELen], e.Extra)
@@ -204,11 +207,12 @@ func read_ALIVE2_RESP(reply []byte) interface{} {
 	return false
 }
 
-func compose_PORT_PLEASE2_REQ(name string) (buf []byte) {
-	buflen := uint16(len(name) + 1)
-	buf = make([]byte, buflen)
-	buf[0] = byte(EPMD_PORT_PLEASE2_REQ)
-	copy(buf[1:buflen], name)
+func compose_PORT_PLEASE2_REQ(name string) (reply []byte) {
+	replylen := uint16(2 + len(name) + 1)
+	reply = make([]byte, replylen)
+	binary.BigEndian.PutUint16(reply[0:2], uint16(len(reply)-2))
+	reply[2] = byte(EPMD_PORT_PLEASE2_REQ)
+	copy(reply[3:replylen], name)
 	return
 }
 
@@ -269,10 +273,12 @@ func server(port uint16) {
 					select {
 					case req := <-in:
 						lib.Log("Request from EPMD client: %v", req)
-
-						switch req[0] {
+						// req[0:1] - length
+						switch req[2] {
 						case EPMD_ALIVE2_REQ:
-							out <- compose_ALIVE2_RESP(req)
+							out <- compose_ALIVE2_RESP(req[2:])
+						default:
+							lib.Log("unknown EPMD request")
 						}
 					}
 				}
