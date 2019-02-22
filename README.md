@@ -5,6 +5,7 @@ Implementation of Erlang/OTP node in Go
 #### Features ####
 
  * Publish listen port via EPMD
+ * Embedded EPMD server
  * Handle incoming connection from other node using Erlang Distribution Protocol
  * Spawn Erlang-like processes
  * Register and unregister processes with simple atom
@@ -27,8 +28,10 @@ Here is the changes of latest release. For more details see the [ChangeLog](Chan
 
 #### [0.2.0](https://github.com/halturin/ergonode/releases/tag/0.2.0) - 2019-02-23 ####
 - Now we make versioning releases
-- Improve node creation. Now you can specify the listening port range. See 'Usage' for details
-- Add embedded EPMD. Trying to start internal epmd service on starting ergonode.
+- Improve node creation. Now you can specify the listening port range. See 'Usage' for the details
+- Add embedded EPMD. During the node initialization (ergonode.Create) its trying to start internal epmd service and listen port you have spicified in arguments (or default value: 4369).
+
+
 
 ## Usage ##
 
@@ -39,12 +42,17 @@ type goGenServ struct {
     completeChan chan bool
 }
 
-// listen from ListenRangeBegin ... ListenRangeEnd
+
+// listen from ListenRangeBegin ... ListenRangeEnd and use custom EPMD port
+// n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin), uint16(ListenRangeEnd), uint16(EPMDPort))
+//
+// listen from ListenRangeBegin ... ListenRangeEnd with default EPMD port 4369
 // n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin), uint16(ListenRangeEnd))
-// listen from ListenRangeBegin ... 65000
+//
+// listen from ListenRangeBegin ... 65000 with default EPMD port 4369
 // n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin))
 
-// use default listen port range: 15000...65000
+// use default listen port range: 15000...65000 and use default EPMD port 4369
 Node := ergonode.Create("examplenode@127.0.0.1", "SecretCookie")
 completeChan := make(chan bool)
 gs := new(goGenServ)

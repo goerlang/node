@@ -83,19 +83,13 @@ type Process interface {
 	setPid(pid etf.Pid)                        // method set pid of started process
 }
 
-var Options = struct {
-	EPMD_port int
-	EPMD_host string
-}{
-	EPMD_port: 4369,
-	EPMD_host: "127.0.0.1",
-}
-
 // Create create new node context with specified name and cookie string
 func Create(name string, cookie string, ports ...uint16) (node *Node) {
 	var listenRangeBegin uint16 = 15000
 	var listenRangeEnd uint16 = 65000
-	var port uint16 = 0
+	var hidden bool = false
+	var portEPMD uint16 = 4369
+	var listenPort uint16 = 0
 	var listener net.Listener
 
 	lib.Log("Start with name '%s' and cookie '%s'", name, cookie)
@@ -111,23 +105,34 @@ func Create(name string, cookie string, ports ...uint16) (node *Node) {
 		if listenRangeBegin-listenRangeEnd < 0 {
 			panic("Wrong port arguments")
 		}
+	case 3:
+		listenRangeBegin = ports[0]
+		listenRangeEnd = ports[1]
+		if listenRangeBegin-listenRangeEnd < 0 {
+			panic("Wrong port arguments")
+		}
+		portEPMD = ports[2]
 
 	default:
 		panic("Wrong port arguments")
 	}
 
 	lib.Log("Listening range: %d...%d", listenRangeBegin, listenRangeEnd)
+	if portEPMD != 4369 {
+		lib.Log("Using custom EPMD port: %d", portEPMD)
+	}
+
 	for p := listenRangeBegin; p <= listenRangeEnd; p++ {
 		l, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(int(p))))
 		if err != nil {
 			continue
 		}
-		port = p
+		listenPort = p
 		listener = l
 		break
 	}
 
-	if port == 0 {
+	if listenPort == 0 {
 		panic("Can't listen port")
 	}
 
@@ -138,7 +143,7 @@ func Create(name string, cookie string, ports ...uint16) (node *Node) {
 	}
 
 	epmd := dist.EPMD{}
-	epmd.Init(Options.EPMD_host, Options.EPMD_port)
+	epmd.Init(name, listenPort, portEPMD, hidden)
 
 	node = &Node{
 		EPMD:        epmd,
@@ -571,8 +576,7 @@ func connect(n *Node, to etf.Atom) error {
 		tcp.SetKeepAlive(true)
 	}
 
-	wchan := make(chan []etf.Term, 10)
-	n.run(c, wchan, true)
+	n.run(c, true)
 
 	return nil
 }

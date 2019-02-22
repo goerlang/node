@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"github.com/halturin/ergonode/lib"
 	"net"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -41,43 +43,46 @@ type EPMD struct {
 	Creation uint16
 
 	response chan interface{}
-	out      chan []byte
 }
 
-func (e *EPMD) Init(host string, port uint16) {
-	if !e.server(host, port) {
-		e.client(host, port)
-	}
-}
-
-func (e *EPMD) client(name string, port uint16) {
+func (e *EPMD) Init(name string, listenport uint16, epmdport uint16, hidden bool) {
+	// trying to start embedded EPMD
+	server(epmdport)
 
 	ns := strings.Split(name, "@")
-	// TODO: add fqdn support
+	if len(ns) != 2 {
+		panic("FQDN for node name is required (example: node@hostname)")
+	}
 
 	e.FullName = name
 	e.Name = ns[0]
 	e.Domain = ns[1]
-	e.Port = port
-	e.Type = 77 // or 72 if hidden
+	e.Port = listenport
+
+	if hidden {
+		e.Type = 72
+	} else {
+		e.Type = 77
+	}
+
 	e.Protocol = 0
 	e.HighVsn = 5
 	e.LowVsn = 5
 	e.Creation = 0
-	dsn := net.JoinHostPort("", strconv.Itoa(int(p)))
-	conn, err := net.Dial("tcp", "127.0.0.1:4369")
+	dsn := net.JoinHostPort("", strconv.Itoa(int(epmdport)))
+	conn, err := net.Dial("tcp", dsn)
 	if err != nil {
 		panic(err.Error())
 	}
 
 	in := make(chan []byte)
 	go epmdREADER(conn, in)
-	e.out = make(chan []byte)
-	go epmdWRITER(conn, in, e.out)
+	out := make(chan []byte)
+	go epmdWRITER(conn, in, out)
 
 	e.response = make(chan interface{})
 
-	//epmd handler loop
+	//epmd client handler loop
 	go func() {
 		defer conn.Close()
 		for {
@@ -97,37 +102,13 @@ func (e *EPMD) client(name string, port uint16) {
 		}
 	}()
 
-	e.register()
+	e.register(out)
 
 }
 
-func (e *EPMD) server(host string, port uint16) bool {
+func (e *EPMD) register(out chan []byte) {
 
-	// l, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(int(port))))
-	// if err != nil {
-	// 	return false
-	// }
-
-	// go func() {
-	// 	for {
-	// 		c, err := l.Accept()
-	// 		lib.Log("Accepted new EPMD connection from %s", c.RemoteAddr().String())
-	// 		if err != nil {
-	// 			lib.Log(err.Error())
-	// 		} else {
-	// 			wchan := make(chan []etf.Term, 10)
-	// 			node.run(c, wchan, false)
-	// 		}
-	// 	}
-	// }()
-
-	// return true
-	return false
-}
-
-func (e *EPMD) register() {
-
-	e.out <- compose_ALIVE2_REQ(e)
+	out <- compose_ALIVE2_REQ(e)
 	creation := <-e.response
 
 	switch creation {
@@ -178,7 +159,7 @@ func epmdREADER(conn net.Conn, in chan []byte) {
 			in <- []byte{}
 			return
 		}
-		lib.Log("Read from EPMD %d: %v", n, buf[:n])
+		lib.Log("EPMD reader. Read %d: %v", n, buf[:n])
 		in <- buf[:n]
 	}
 }
@@ -241,66 +222,71 @@ func read_PORT2_RESP(reply []byte) (portno int) {
 	return
 }
 
-// func epmd(host string, port int) bool {
-// 	epmd, err := net.Listen("tcp", net.JoinHostPort(host, port))
-// 	if err != nil {
-// 		lib.Log("EPMD starting failed %s", err)
-// 		return false
-// 	}
+var epmdmap map[string]uint16
 
-// 	go func() {
-// 		for {
-// 			c, err := epmd.AcceptTCP()
-// 			if err != nil {
-// 				lib.Log(err.Error())
-// 				continue
-// 			}
+func server(port uint16) {
 
-// 			c.SetKeepAlive(true)
-// 			c.SetKeepAlivePeriod(15 * time.Second)
-// 			c.SetNoDelay(true)
+	if epmdmap != nil {
+		// already started
+		return
+	}
 
-// 			lib.Log("EPMD accepted new connection from %s", c.RemoteAddr().String())
+	epmd, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(int(port))))
+	if err != nil {
+		lib.Log("Can't start embedded EPMD service: %s", err)
+		return
+	}
 
-// 			epmdconn := EPMDConn{
-// 				conn: c,
-// 			}
-// 			epmdconn.run(c)
+	epmdmap = make(map[string]uint16)
 
-// 		}
-// 	}()
-// }
+	lib.Log("Started embedded EMPD service and listen port: %d", port)
 
-// func (e *EPMDConn) run() {
-// 	go func() {
-// 		for {
-// 			terms := <-wchan
-// 			err := currNd.WriteMessage(c, terms)
-// 			if err != nil {
-// 				lib.Log("Enode error (writing): %s", err.Error())
-// 				break
-// 			}
-// 		}
-// 		c.Close()
-// 		n.lock.Lock()
-// 		n.handle_monitors_node(currNd.GetRemoteName())
-// 		delete(n.connections, currNd.GetRemoteName())
-// 		n.lock.Unlock()
-// 	}()
+	go func() {
+		for {
+			c, err := epmd.Accept()
+			if err != nil {
+				lib.Log(err.Error())
+				continue
+			}
 
-// 	go func() {
-// 		for {
-// 			terms, err := currNd.ReadMessage(c)
-// 			if err != nil {
-// 				lib.Log("Enode error (reading): %s", err.Error())
-// 				break
-// 			}
-// 			n.handleTerms(c, wchan, terms)
-// 		}
-// 		c.Close()
-// 		n.lock.Lock()
-// 		n.handle_monitors_node(currNd.GetRemoteName())
-// 		delete(n.connections, currNd.GetRemoteName())
-// 		n.lock.Unlock()
-// 	}()
-// }
+			if tcp, ok := c.(*net.TCPConn); !ok {
+				tcp.SetKeepAlive(true)
+				tcp.SetKeepAlivePeriod(15 * time.Second)
+				tcp.SetNoDelay(true)
+			}
+
+			lib.Log("EPMD accepted new connection from %s", c.RemoteAddr().String())
+
+			//epmd connection handler loop
+			go func() {
+				in := make(chan []byte)
+				go epmdREADER(c, in)
+				out := make(chan []byte)
+				go epmdWRITER(c, in, out)
+
+				defer c.Close()
+				for {
+					select {
+					case req := <-in:
+						lib.Log("Request from EPMD client: %v", req)
+
+						switch req[0] {
+						case EPMD_ALIVE2_REQ:
+							out <- compose_ALIVE2_RESP(req)
+						}
+					}
+				}
+			}()
+
+		}
+	}()
+}
+
+func compose_ALIVE2_RESP(req []byte) []byte {
+	reply := make([]byte, 4)
+	reply[0] = EPMD_ALIVE2_RESP
+	reply[1] = 1
+	binary.BigEndian.PutUint16(reply[2:], uint16(99))
+	lib.Log("Made reply for ALIVE2_REQ: %#v", reply)
+	return reply
+}
