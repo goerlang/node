@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -157,8 +158,6 @@ func epmdREADER(conn net.Conn, in chan []byte) {
 		if err != nil {
 			in <- buf[0:n]
 			in <- []byte{}
-			lib.Log("111112")
-
 			return
 		}
 		lib.Log("EPMD reader. Read %d: %v", n, buf[:n])
@@ -172,7 +171,6 @@ func epmdWRITER(conn net.Conn, in chan []byte, out chan []byte) {
 		case data := <-out:
 			_, err := conn.Write(data)
 			if err != nil {
-				lib.Log("11111")
 				in <- []byte{}
 			}
 			lib.Log("EPMD writer. Write: %v", data)
@@ -226,11 +224,30 @@ func read_PORT2_RESP(reply []byte) (portno int) {
 	return
 }
 
-var epmdmap map[string]uint16
+/// empd server implementation
+
+type epmdsrv struct {
+	portmap map[string]uint16
+	mtx     sync.RWMutex
+}
+
+func (e *epmdsrv) Join(name string, port uint16, hidden bool) {
+	e.mtx.Lock()
+	e.portmap[name] = port
+	e.mtx.Unlock()
+}
+
+func (e *epmdsrv) Leave(name string) {
+	e.mtx.Lock()
+	delete(e.portmap, name)
+	e.mtx.Unlock()
+}
+
+var epmdserver *epmdsrv
 
 func server(port uint16) {
 
-	if epmdmap != nil {
+	if epmdserver != nil {
 		// already started
 		return
 	}
@@ -241,7 +258,9 @@ func server(port uint16) {
 		return
 	}
 
-	epmdmap = make(map[string]uint16)
+	epmdserver = &epmdsrv{
+		portmap: make(map[string]uint16),
+	}
 
 	lib.Log("Started embedded EMPD service and listen port: %d", port)
 
