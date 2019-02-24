@@ -231,10 +231,17 @@ type epmdsrv struct {
 	mtx     sync.RWMutex
 }
 
-func (e *epmdsrv) Join(name string, port uint16, hidden bool) {
+func (e *epmdsrv) Join(name string, port uint16, hidden bool) bool {
+
 	e.mtx.Lock()
+	defer e.mtx.Unlock()
+	if _, ok := e.portmap[name]; ok {
+		// already registered
+		return false
+	}
+	lib.Log("EPMD registering node: %s port:%d hidden:%t", name, port, hidden)
 	e.portmap[name] = port
-	e.mtx.Unlock()
+	return true
 }
 
 func (e *epmdsrv) Leave(name string) {
@@ -291,11 +298,14 @@ func server(port uint16) {
 				for {
 					select {
 					case req := <-in:
+						if len(req) == 0 {
+							continue
+						}
 						lib.Log("Request from EPMD client: %v", req)
 						// req[0:1] - length
 						switch req[2] {
 						case EPMD_ALIVE2_REQ:
-							out <- compose_ALIVE2_RESP(req[2:])
+							out <- compose_ALIVE2_RESP(req[3:])
 						default:
 							lib.Log("unknown EPMD request")
 						}
@@ -308,10 +318,30 @@ func server(port uint16) {
 }
 
 func compose_ALIVE2_RESP(req []byte) []byte {
+
+	port := binary.BigEndian.Uint16(req[0:2])
+	hidden := false //
+	if req[2] == 72 {
+		hidden = true
+	}
+	// req[3] - protocol = 0
+	// hiversion := binary.BigEndian.Uint16(req[4:6])
+	// loversion := binary.BigEndian.Uint16(req[6:8])
+	namelen := binary.BigEndian.Uint16(req[8:10])
+	name := string(req[10 : 10+namelen])
+
+	// do not read extra data. do we need it?
+
 	reply := make([]byte, 4)
 	reply[0] = EPMD_ALIVE2_RESP
-	reply[1] = 1
-	binary.BigEndian.PutUint16(reply[2:], uint16(99))
+
+	if epmdserver.Join(name, port, hidden) {
+		reply[1] = 0
+	} else {
+		reply[1] = 1
+	}
+
+	binary.BigEndian.PutUint16(reply[2:], uint16(1))
 	lib.Log("Made reply for ALIVE2_REQ: %#v", reply)
 	return reply
 }
