@@ -91,8 +91,8 @@ func (e *EPMD) Init(name string, listenport uint16, epmdport uint16, hidden bool
 			case reply := <-in:
 				lib.Log("From EPMD: %v", reply)
 
-				if len(reply) < 1 {
-					continue
+				if len(reply) == 0 {
+					return
 				}
 
 				switch reply[0] {
@@ -158,6 +158,7 @@ func epmdREADER(conn net.Conn, in chan []byte) {
 		if err != nil {
 			in <- buf[0:n]
 			in <- []byte{}
+			lib.Log("EPMD reader. closing connection")
 			return
 		}
 		lib.Log("EPMD reader. Read %d: %v", n, buf[:n])
@@ -172,6 +173,8 @@ func epmdWRITER(conn net.Conn, in chan []byte, out chan []byte) {
 			_, err := conn.Write(data)
 			if err != nil {
 				in <- []byte{}
+				lib.Log("EPMD writer. closing connection")
+				return
 			}
 			lib.Log("EPMD writer. Write: %v", data)
 
@@ -226,12 +229,20 @@ func read_PORT2_RESP(reply []byte) (portno int) {
 
 /// empd server implementation
 
+type nodeinfo struct {
+	Port      uint16
+	Hidden    bool
+	HiVersion uint16
+	LoVersion uint16
+	Extra     []byte
+}
+
 type epmdsrv struct {
-	portmap map[string]uint16
+	portmap map[string]*nodeinfo
 	mtx     sync.RWMutex
 }
 
-func (e *epmdsrv) Join(name string, port uint16, hidden bool) bool {
+func (e *epmdsrv) Join(name string, info *nodeinfo) bool {
 
 	e.mtx.Lock()
 	defer e.mtx.Unlock()
@@ -239,15 +250,34 @@ func (e *epmdsrv) Join(name string, port uint16, hidden bool) bool {
 		// already registered
 		return false
 	}
-	lib.Log("EPMD registering node: %s port:%d hidden:%t", name, port, hidden)
-	e.portmap[name] = port
+	lib.Log("EPMD registering node: %s port:%d hidden:%t", name, info.Port, info.Hidden)
+	e.portmap[name] = info
 	return true
+}
+
+func (e *epmdsrv) Get(name string) *nodeinfo {
+	if info, ok := e.portmap[name]; ok {
+		// already registered
+		return info
+	}
+
+	return nil
 }
 
 func (e *epmdsrv) Leave(name string) {
 	e.mtx.Lock()
 	delete(e.portmap, name)
 	e.mtx.Unlock()
+}
+
+func (e *epmdsrv) ListAll() map[string]uint16 {
+	e.mtx.Lock()
+	lst := make(map[string]uint16)
+	for k, v := range e.portmap {
+		lst[k] = v.Port
+	}
+	e.mtx.Unlock()
+	return lst
 }
 
 var epmdserver *epmdsrv
@@ -266,7 +296,7 @@ func server(port uint16) {
 	}
 
 	epmdserver = &epmdsrv{
-		portmap: make(map[string]uint16),
+		portmap: make(map[string]*nodeinfo),
 	}
 
 	lib.Log("Started embedded EMPD service and listen port: %d", port)
@@ -306,6 +336,14 @@ func server(port uint16) {
 						switch req[2] {
 						case EPMD_ALIVE2_REQ:
 							out <- compose_ALIVE2_RESP(req[3:])
+						case EPMD_PORT_PLEASE2_REQ:
+							out <- compose_EPMD_PORT2_RESP(req[3:])
+							time.Sleep(1 * time.Second)
+							c.Close()
+						case EPMD_NAMES_REQ:
+							out <- compose_EPMD_NAMES_RESP(port, req[3:])
+							time.Sleep(1 * time.Second)
+							c.Close()
 						default:
 							lib.Log("unknown EPMD request")
 						}
@@ -319,23 +357,25 @@ func server(port uint16) {
 
 func compose_ALIVE2_RESP(req []byte) []byte {
 
-	port := binary.BigEndian.Uint16(req[0:2])
 	hidden := false //
 	if req[2] == 72 {
 		hidden = true
 	}
-	// req[3] - protocol = 0
-	// hiversion := binary.BigEndian.Uint16(req[4:6])
-	// loversion := binary.BigEndian.Uint16(req[6:8])
+
 	namelen := binary.BigEndian.Uint16(req[8:10])
 	name := string(req[10 : 10+namelen])
 
-	// do not read extra data. do we need it?
+	info := nodeinfo{
+		Port:      binary.BigEndian.Uint16(req[0:2]),
+		Hidden:    hidden,
+		HiVersion: binary.BigEndian.Uint16(req[4:6]),
+		LoVersion: binary.BigEndian.Uint16(req[6:8]),
+	}
 
 	reply := make([]byte, 4)
 	reply[0] = EPMD_ALIVE2_RESP
 
-	if epmdserver.Join(name, port, hidden) {
+	if epmdserver.Join(name, &info) {
 		reply[1] = 0
 	} else {
 		reply[1] = 1
@@ -344,4 +384,55 @@ func compose_ALIVE2_RESP(req []byte) []byte {
 	binary.BigEndian.PutUint16(reply[2:], uint16(1))
 	lib.Log("Made reply for ALIVE2_REQ: %#v", reply)
 	return reply
+}
+
+func compose_EPMD_PORT2_RESP(req []byte) []byte {
+	var info *nodeinfo
+
+	name := string(req)
+
+	if info = epmdserver.Get(name); info == nil {
+		// not found
+		lib.Log("EPMD: looking for %s. Not found", name)
+		return []byte{EPMD_PORT2_RESP, 1}
+	}
+
+	reply := make([]byte, 2+12+len(name)+2+len(info.Extra))
+	binary.BigEndian.PutUint16(reply[0:2], uint16(len(reply)-2))
+	reply[2] = EPMD_PORT2_RESP
+	reply[3] = 0
+	binary.BigEndian.PutUint16(reply[4:6], uint16(info.Port))
+	if info.Hidden {
+		reply[6] = 72
+	} else {
+		reply[6] = 77
+	}
+	reply[7] = 0 // protocol tcp
+	binary.BigEndian.PutUint16(reply[8:10], uint16(info.HiVersion))
+	binary.BigEndian.PutUint16(reply[10:12], uint16(info.LoVersion))
+	binary.BigEndian.PutUint16(reply[12:14], uint16(len(name)))
+	offset := 14 + len(name)
+	copy(reply[14:offset], name)
+	nELen := len(info.Extra)
+	binary.BigEndian.PutUint16(reply[offset:offset+2], uint16(nELen))
+	copy(reply[offset+2:offset+2+nELen], info.Extra)
+
+	lib.Log("Made reply for EPMD_PORT_PLEASE2_REQ: %#v", reply)
+
+	return reply
+}
+
+func compose_EPMD_NAMES_RESP(port uint16, req []byte) []byte {
+	// io:format("name ~ts at port ~p~n", [NodeName, Port]).
+	var str strings.Builder
+	var s string
+	var portbuf [4]byte
+	binary.BigEndian.PutUint32(portbuf[0:4], uint32(port))
+	str.WriteString(string(portbuf[0:]))
+	for h, p := range epmdserver.ListAll() {
+		s = fmt.Sprintf("name %s at port %d\n", h, p)
+		str.WriteString(s)
+	}
+
+	return []byte(str.String())
 }

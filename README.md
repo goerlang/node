@@ -20,7 +20,7 @@ Implementation of Erlang/OTP node in Go
 
 #### Requirement ####
 
- * Go 1.9 and above
+ * Go 1.10 and above
 
 ## Changelog ##
 
