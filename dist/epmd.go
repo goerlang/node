@@ -71,7 +71,7 @@ func (e *EPMD) Init(name string, listenport uint16, epmdport uint16, hidden bool
 	go func(e *EPMD) {
 		for {
 			// trying to start embedded EPMD before we go further
-			server(epmdport)
+			Server(epmdport)
 
 			dsn := net.JoinHostPort("", strconv.Itoa(int(epmdport)))
 			conn, err := net.Dial("tcp", dsn)
@@ -146,37 +146,6 @@ func (e *EPMD) ResolvePort(name string) int {
 	}
 }
 
-func epmdREADER(conn net.Conn, in chan []byte) {
-	for {
-		buf := make([]byte, 1024)
-		n, err := conn.Read(buf)
-		if err != nil {
-			in <- buf[0:n]
-			in <- []byte{}
-			lib.Log("EPMD reader. closing connection")
-			return
-		}
-		lib.Log("EPMD reader. Read %d: %v", n, buf[:n])
-		in <- buf[:n]
-	}
-}
-
-func epmdWRITER(conn net.Conn, in chan []byte, out chan []byte) {
-	for {
-		select {
-		case data := <-out:
-			_, err := conn.Write(data)
-			if err != nil {
-				in <- []byte{}
-				lib.Log("EPMD writer. closing connection")
-				return
-			}
-			lib.Log("EPMD writer. Write: %v", data)
-
-		}
-	}
-}
-
 func compose_ALIVE2_REQ(e *EPMD) (reply []byte) {
 	reply = make([]byte, 2+14+len(e.Name)+len(e.Extra))
 	binary.BigEndian.PutUint16(reply[0:2], uint16(len(reply)-2))
@@ -209,11 +178,6 @@ func compose_PORT_PLEASE2_REQ(name string) (reply []byte) {
 	binary.BigEndian.PutUint16(reply[0:2], uint16(len(reply)-2))
 	reply[2] = byte(EPMD_PORT_PLEASE2_REQ)
 	copy(reply[3:replylen], name)
-	return
-}
-
-func read_PORT2_RESP(reply []byte) (portno int) {
-
 	return
 }
 
@@ -275,17 +239,18 @@ func (e *epmdsrv) ListAll() map[string]uint16 {
 
 var epmdserver *epmdsrv
 
-func server(port uint16) {
+func Server(port uint16) error {
 
 	if epmdserver != nil {
 		// already started
-		return
+		return fmt.Errorf("Already started")
 	}
 
 	epmd, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(int(port))))
 	if err != nil {
 		lib.Log("Can't start embedded EPMD service: %s", err)
-		return
+		return fmt.Errorf("Can't start embedded EPMD service: %s", err)
+
 	}
 
 	epmdserver = &epmdsrv{
@@ -313,7 +278,9 @@ func server(port uint16) {
 					n, err := c.Read(buf)
 					lib.Log("Request from EPMD client: %v", buf[:n])
 					if err != nil {
-						epmdserver.Leave(name)
+						if name != "" {
+							epmdserver.Leave(name)
+						}
 						return
 					}
 					// buf[0:1] - length
@@ -351,6 +318,8 @@ func server(port uint16) {
 
 		}
 	}()
+
+	return nil
 }
 
 func compose_ALIVE2_RESP(req []byte) ([]byte, string) {

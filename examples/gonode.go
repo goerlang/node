@@ -23,6 +23,7 @@ var (
 	ListenRangeBegin uint16
 	ListenRangeEnd   uint16 = 35000
 	Listen           string
+	ListenEPMD       int
 
 	EnableRPC bool
 )
@@ -153,6 +154,7 @@ func init() {
 	flag.StringVar(&Listen, "listen", "15151-20151", "listen port range")
 	flag.StringVar(&SrvName, "gen_server", "examplegs", "gen_server name")
 	flag.StringVar(&NodeName, "name", "examplenode@127.0.0.1", "node name")
+	flag.IntVar(&ListenEPMD, "epmd", 4369, "EPMD port")
 	flag.StringVar(&Cookie, "cookie", "123", "cookie for interaction with erlang cluster")
 	flag.BoolVar(&EnableRPC, "rpc", false, "enable RPC")
 
@@ -185,8 +187,8 @@ func main() {
 		panic("wrong port range arg")
 	}
 
-	// Initialize new node with given name and cookie
-	n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin), uint16(ListenRangeEnd))
+	// Initialize new node with given name, cookie, listening port range and epmd port
+	n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin), uint16(ListenRangeEnd), uint16(ListenEPMD))
 
 	// listen from ListenRangeBegin ... 65000
 	// n := ergonode.Create(NodeName, Cookie, uint16(ListenRangeBegin))
