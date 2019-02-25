@@ -240,21 +240,24 @@ func (e *epmdsrv) Join(name string, info *nodeinfo) bool {
 		// already registered
 		return false
 	}
-	lib.Log("EPMD registering node: %s port:%d hidden:%t", name, info.Port, info.Hidden)
+	lib.Log("EPMD registering node: '%s' port:%d hidden:%t", name, info.Port, info.Hidden)
 	e.portmap[name] = info
+
 	return true
 }
 
 func (e *epmdsrv) Get(name string) *nodeinfo {
+	e.mtx.RLock()
+	defer e.mtx.RUnlock()
 	if info, ok := e.portmap[name]; ok {
-		// already registered
 		return info
 	}
-
 	return nil
 }
 
 func (e *epmdsrv) Leave(name string) {
+	lib.Log("EPMD unregistering node: '%s'", name)
+
 	e.mtx.Lock()
 	delete(e.portmap, name)
 	e.mtx.Unlock()
@@ -299,53 +302,58 @@ func server(port uint16) {
 				continue
 			}
 
-			if tcp, ok := c.(*net.TCPConn); !ok {
-				tcp.SetKeepAlive(true)
-				tcp.SetKeepAlivePeriod(15 * time.Second)
-				tcp.SetNoDelay(true)
-			}
-
 			lib.Log("EPMD accepted new connection from %s", c.RemoteAddr().String())
 
 			//epmd connection handler loop
-			go func() {
-				in := make(chan []byte)
-				go epmdREADER(c, in)
-				out := make(chan []byte)
-				go epmdWRITER(c, in, out)
-
+			go func(c net.Conn) {
 				defer c.Close()
+				buf := make([]byte, 1024)
+				name := ""
 				for {
-					select {
-					case req := <-in:
-						if len(req) == 0 {
-							continue
-						}
-						lib.Log("Request from EPMD client: %v", req)
-						// req[0:1] - length
-						switch req[2] {
-						case EPMD_ALIVE2_REQ:
-							out <- compose_ALIVE2_RESP(req[3:])
-						case EPMD_PORT_PLEASE2_REQ:
-							out <- compose_EPMD_PORT2_RESP(req[3:])
-							time.Sleep(1 * time.Second)
-							c.Close()
-						case EPMD_NAMES_REQ:
-							out <- compose_EPMD_NAMES_RESP(port, req[3:])
-							time.Sleep(1 * time.Second)
-							c.Close()
-						default:
-							lib.Log("unknown EPMD request")
-						}
+					n, err := c.Read(buf)
+					lib.Log("Request from EPMD client: %v", buf[:n])
+					if err != nil {
+						epmdserver.Leave(name)
+						return
 					}
+					// buf[0:1] - length
+					if uint16(n-2) != binary.BigEndian.Uint16(buf[0:2]) {
+						continue
+					}
+
+					switch buf[2] {
+					case EPMD_ALIVE2_REQ:
+						reply, registered := compose_ALIVE2_RESP(buf[3:n])
+						c.Write(reply)
+						if registered == "" {
+							return
+						}
+						name = registered
+						if tcp, ok := c.(*net.TCPConn); !ok {
+							tcp.SetKeepAlive(true)
+							tcp.SetKeepAlivePeriod(15 * time.Second)
+							tcp.SetNoDelay(true)
+						}
+						continue
+					case EPMD_PORT_PLEASE2_REQ:
+						c.Write(compose_EPMD_PORT2_RESP(buf[3:n]))
+						return
+					case EPMD_NAMES_REQ:
+						c.Write(compose_EPMD_NAMES_RESP(port, buf[3:n]))
+						return
+					default:
+						lib.Log("unknown EPMD request")
+						return
+					}
+
 				}
-			}()
+			}(c)
 
 		}
 	}()
 }
 
-func compose_ALIVE2_RESP(req []byte) []byte {
+func compose_ALIVE2_RESP(req []byte) ([]byte, string) {
 
 	hidden := false //
 	if req[2] == 72 {
@@ -365,25 +373,26 @@ func compose_ALIVE2_RESP(req []byte) []byte {
 	reply := make([]byte, 4)
 	reply[0] = EPMD_ALIVE2_RESP
 
+	registered := ""
 	if epmdserver.Join(name, &info) {
 		reply[1] = 0
+		registered = name
 	} else {
 		reply[1] = 1
 	}
 
 	binary.BigEndian.PutUint16(reply[2:], uint16(1))
-	lib.Log("Made reply for ALIVE2_REQ: %#v", reply)
-	return reply
+	lib.Log("Made reply for ALIVE2_REQ: (%s) %#v", name, reply)
+	return reply, registered
 }
 
 func compose_EPMD_PORT2_RESP(req []byte) []byte {
-	var info *nodeinfo
-
 	name := string(req)
+	info := epmdserver.Get(name)
 
-	if info = epmdserver.Get(name); info == nil {
+	if info == nil {
 		// not found
-		lib.Log("EPMD: looking for %s. Not found", name)
+		lib.Log("EPMD: looking for '%s'. Not found", name)
 		return []byte{EPMD_PORT2_RESP, 1}
 	}
 
