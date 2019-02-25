@@ -47,9 +47,6 @@ type EPMD struct {
 }
 
 func (e *EPMD) Init(name string, listenport uint16, epmdport uint16, hidden bool) {
-	// trying to start embedded EPMD
-	server(epmdport)
-
 	ns := strings.Split(name, "@")
 	if len(ns) != 2 {
 		panic("FQDN for node name is required (example: node@hostname)")
@@ -70,54 +67,48 @@ func (e *EPMD) Init(name string, listenport uint16, epmdport uint16, hidden bool
 	e.HighVsn = 5
 	e.LowVsn = 5
 	e.Creation = 0
-	dsn := net.JoinHostPort("", strconv.Itoa(int(epmdport)))
-	conn, err := net.Dial("tcp", dsn)
-	if err != nil {
-		panic(err.Error())
-	}
 
-	in := make(chan []byte)
-	go epmdREADER(conn, in)
-	out := make(chan []byte)
-	go epmdWRITER(conn, in, out)
-
-	e.response = make(chan interface{})
-
-	//epmd client handler loop
-	go func() {
-		defer conn.Close()
+	go func(e *EPMD) {
 		for {
-			select {
-			case reply := <-in:
-				lib.Log("From EPMD: %v", reply)
+			// trying to start embedded EPMD before we go further
+			server(epmdport)
 
-				if len(reply) == 0 {
-					return
+			dsn := net.JoinHostPort("", strconv.Itoa(int(epmdport)))
+			conn, err := net.Dial("tcp", dsn)
+			if err != nil {
+				// we can't work without epmd service
+				panic(err.Error())
+			}
+
+			conn.Write(compose_ALIVE2_REQ(e))
+
+			for {
+				buf := make([]byte, 1024)
+				_, err := conn.Read(buf)
+				if err != nil {
+					lib.Log("EPMD: closing connection")
+					conn.Close()
+					break
 				}
 
-				switch reply[0] {
-				case EPMD_ALIVE2_RESP:
-					e.response <- read_ALIVE2_RESP(reply)
+				if buf[0] == EPMD_ALIVE2_RESP {
+					creation := read_ALIVE2_RESP(buf)
+					switch creation {
+					case false:
+						panic(fmt.Sprintf("Duplicate name '%s'", e.Name))
+					default:
+						e.Creation = creation.(uint16)
+					}
+				} else {
+					lib.Log("Malformed EPMD reply")
+					conn.Close()
+					break
 				}
 			}
+
 		}
-	}()
+	}(e)
 
-	e.register(out)
-
-}
-
-func (e *EPMD) register(out chan []byte) {
-
-	out <- compose_ALIVE2_REQ(e)
-	creation := <-e.response
-
-	switch creation {
-	case false:
-		panic(fmt.Sprintf("Duplicate name '%s'", e.Name))
-	default:
-		e.Creation = creation.(uint16)
-	}
 }
 
 func (e *EPMD) ResolvePort(name string) int {
@@ -146,9 +137,13 @@ func (e *EPMD) ResolvePort(name string) int {
 		return -1
 	}
 
-	value := read_PORT2_RESP(buf)
-
-	return int(value)
+	if buf[0] == 119 && buf[1] == 0 {
+		p := binary.BigEndian.Uint16(buf[2:4])
+		// we don't use all the extra info for a while. FIXME (do we need it?)
+		return int(p)
+	} else {
+		return -1
+	}
 }
 
 func epmdREADER(conn net.Conn, in chan []byte) {
@@ -218,12 +213,7 @@ func compose_PORT_PLEASE2_REQ(name string) (reply []byte) {
 }
 
 func read_PORT2_RESP(reply []byte) (portno int) {
-	if reply[0] == 119 && reply[1] == 0 {
-		p := binary.BigEndian.Uint16(reply[2:4])
-		portno = int(p)
-	} else {
-		portno = -1
-	}
+
 	return
 }
 
