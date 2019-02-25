@@ -397,22 +397,21 @@ func compose_EPMD_PORT2_RESP(req []byte) []byte {
 		return []byte{EPMD_PORT2_RESP, 1}
 	}
 
-	reply := make([]byte, 2+12+len(name)+2+len(info.Extra))
-	binary.BigEndian.PutUint16(reply[0:2], uint16(len(reply)-2))
-	reply[2] = EPMD_PORT2_RESP
-	reply[3] = 0
-	binary.BigEndian.PutUint16(reply[4:6], uint16(info.Port))
+	reply := make([]byte, 12+len(name)+2+len(info.Extra))
+	reply[0] = EPMD_PORT2_RESP
+	reply[1] = 0
+	binary.BigEndian.PutUint16(reply[2:4], uint16(info.Port))
 	if info.Hidden {
-		reply[6] = 72
+		reply[4] = 72
 	} else {
-		reply[6] = 77
+		reply[4] = 77
 	}
-	reply[7] = 0 // protocol tcp
-	binary.BigEndian.PutUint16(reply[8:10], uint16(info.HiVersion))
-	binary.BigEndian.PutUint16(reply[10:12], uint16(info.LoVersion))
-	binary.BigEndian.PutUint16(reply[12:14], uint16(len(name)))
-	offset := 14 + len(name)
-	copy(reply[14:offset], name)
+	reply[5] = 0 // protocol tcp
+	binary.BigEndian.PutUint16(reply[6:8], uint16(info.HiVersion))
+	binary.BigEndian.PutUint16(reply[8:10], uint16(info.LoVersion))
+	binary.BigEndian.PutUint16(reply[10:12], uint16(len(name)))
+	offset := 12 + len(name)
+	copy(reply[12:offset], name)
 	nELen := len(info.Extra)
 	binary.BigEndian.PutUint16(reply[offset:offset+2], uint16(nELen))
 	copy(reply[offset+2:offset+2+nELen], info.Extra)
